@@ -5,14 +5,15 @@ const express = require("express");
 const helmet = require("helmet");
 const passport = require("passport");
 const { Strategy } = require("passport-google-oauth20");
+const cookieSession = require("cookie-session");
 
 require("dotenv").config();
-
-const app = express();
 const PORT = 3000;
 const config = {
     CLIENT_ID:process.env.CLIENT_ID,
     CLIENT_SECRET:process.env.CLIENT_SECRET,
+    COOKIE_SESSION_KEY_1:process.env.COOKIE_SESSION_KEY_1,
+    COOKIE_SESSION_KEY_2:process.env.COOKIE_SESSION_KEY_2,
 }
 
 const AUTH_OPTIONS = {
@@ -27,13 +28,47 @@ function verfiyCallback(accessToken,refreshToken,profile,done)
     done(null,profile);
 }
 
-passport.use(new Strategy(AUTH_OPTIONS,verfiyCallback))
+passport.use(new Strategy(AUTH_OPTIONS,verfiyCallback));
+// save session in cookie
+passport.serializeUser((user,done)=>{
+    console.log("user",user.id);
+    done(null,user.id);
+});
+
+// Read session from cookie
+passport.deserializeUser((id,done)=>{
+    done(null,id);
+});
+const app = express();
+
+
 app.use(helmet());
+app.use(cookieSession({
+    keys: [config.COOKIE_SESSION_KEY_1,config.COOKIE_SESSION_KEY_2],
+    name: 'session',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+}));
+app.use((req, res, next) => {
+    // Stub out missing regenerate and save functions.
+    // These don't make sense for client side sessions.
+    if (req.session && !req.session.regenerate) {
+      req.session.regenerate = (cb) => {
+        cb();
+      };
+    }
+    if (req.session && !req.session.save) {
+      req.session.save = (cb) => {
+        cb();
+      };
+    }
+    next();
+  });
 app.use(passport.initialize());
+app.use(passport.session());
 
 function checkLoggedIn(req,res,next)
 {
-    const isLoggedIn = true;
+    const isLoggedIn = req.isAuthenticated() && req.user;
     if(!isLoggedIn)
     {
         return res.status(401).json({
@@ -55,7 +90,7 @@ app.get("/auth/google/callback",
     passport.authenticate("google",{
         failureRedirect:"/failure",
         successRedirect:"/",
-        session:false,
+        session:true,
 }),
 (req,res)=>{
     console.log("Goolgle call us back");
@@ -66,7 +101,8 @@ app.get("/failure",(req,res)=>{
 })
 
 app.get("/auth/logout",(req,res)=>{
-
+    req.logout(()=>{});
+    return res.redirect("/");
 });
 
 
